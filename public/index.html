@@ -1,0 +1,73 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>T'au Lists Tracker</title>
+<style>
+:root{--bg:#0e1418;--card:#162029;--fg:#e6eef2;--mut:#8aa0ad;--ac:#3fc1c9;--gold:#e8b84a}
+@media(prefers-color-scheme:light){:root{--bg:#f2f6f8;--card:#fff;--fg:#14212a;--mut:#5a6f7c;--ac:#0b8a93;--gold:#a87a10}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px system-ui,sans-serif}
+main{max-width:900px;margin:0 auto;padding:24px 16px}h1{margin:0 0 4px}.sub{color:var(--mut);margin-bottom:16px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}select,input,button{background:var(--card);color:var(--fg);border:1px solid #8886;border-radius:8px;padding:8px 10px;font:inherit}
+input{flex:1;min-width:160px}.card{background:var(--card);border-radius:12px;padding:14px;margin-bottom:10px;display:grid;grid-template-columns:56px 1fr auto;gap:12px;align-items:center}
+.place{font-size:22px;font-weight:700;text-align:center;color:var(--mut)}.place.top{color:var(--gold)}.place small{display:block;font-size:11px;font-weight:400}
+.t{font-weight:600}.m{color:var(--mut);font-size:13px;margin-top:2px}.tag{display:inline-block;background:#3fc1c922;color:var(--ac);border-radius:6px;padding:1px 7px;font-size:12px;margin-right:6px}
+a{color:var(--ac);text-decoration:none}a.btn{border:1px solid var(--ac);border-radius:8px;padding:7px 12px;white-space:nowrap}
+@media(max-width:560px){.card{grid-template-columns:48px 1fr}.card a.btn{grid-column:1/-1;text-align:center}}
+.tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button{cursor:pointer}.tabs button.on{border-color:var(--ac);color:var(--ac);font-weight:600}.tag.det{background:#e8b84a22;color:var(--gold)}.tag.dis{background:#8886;color:var(--mut)}button.btn{background:none;color:var(--ac);border:1px solid var(--ac);border-radius:8px;padding:7px 12px;cursor:pointer}
+#modal{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;padding:16px;z-index:9}#modal.on{display:flex}
+#modal .box{background:var(--card);border-radius:12px;max-width:640px;width:100%;max-height:88vh;display:flex;flex-direction:column}
+#modal header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #8883}
+#modal pre{margin:0;padding:16px;overflow:auto;white-space:pre-wrap;font:13px/1.45 ui-monospace,Menlo,monospace}.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}.chip{cursor:pointer;border:1px solid #8886;background:var(--card);color:var(--fg);border-radius:999px;padding:4px 11px;font-size:13px}.chip.on{background:var(--gold);color:#000;border-color:var(--gold)}.chip small{opacity:.7}</style></head><body><main>
+<h1>T'au Empire — Recent Lists</h1><div class="sub" id="sub">Loading from Best Coast Pairings…</div>
+<div class="tabs"><button id="tLH" class="on">Detachments (Listhammer)</button><button id="tBCP">All events (BCP)</button></div>
+<div class="bar"><select id="days"><option value="7">Last 7 days</option><option value="14" selected>Last 14 days</option><option value="30">Last 30 days</option></select>
+<select id="top"><option value="0">All placings</option><option value="3">Top 3</option><option value="1">Winners only</option></select>
+<select id="sort"><option value="new">Newest first</option><option value="old">Oldest first</option><option value="most">Most players</option><option value="least">Fewest players</option><option value="best">Best result</option></select>
+<input id="q" placeholder="Filter by event, player, detachment…"></div>
+<div id="chips" class="chips"></div>
+<div id="out"></div></main>
+<div id="modal"><div class="box"><header><b id="mt"></b><button id="mx" class="btn">Close</button></header><pre id="mp"></pre></div></div>
+<script>
+let lists=[],mode='lh';const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function cardLH(l){const[w,d,lo]=(l.record||'').split('-').map(Number);
+  return `<div class="card"><div class="place ${lo===0&&!d?'top':''}">${esc(l.record||'–')}<small>of ${l.players}</small></div>
+  <div><div class="t">${esc(l.player)}</div>
+  <div style="margin:4px 0">${l.detachments.map(x=>`<span class="tag det">${esc(x)}</span>`).join('')||'<span class="tag det">Unknown detachment</span>'}<span class="tag dis">${esc(l.disposition)}</span></div>
+  <div class="m"><a href="${l.eventUrl}" target="_blank" rel="noopener">${esc(l.event)}</a> · ${esc(l.date)}</div></div>
+  ${l.listText?`<button class="btn" data-i="${lists.indexOf(l)}">View list</button>`:''}</div>`}
+function cardBCP(l){return `<div class="card"><div class="place ${l.placing<=3?'top':''}">${l.placing?'#'+l.placing:'–'}<small>of ${l.players}</small></div>
+  <div><div class="t">${esc(l.player)} ${l.detachment?`<span class="tag dis" title="Force disposition (BCP does not expose detachments)">${esc(l.detachment)}</span>`:''}</div>
+  <div class="m"><a href="${l.eventUrl}" target="_blank" rel="noopener">${esc(l.event)}</a> · ${new Date(l.date).toLocaleDateString()} ${l.wins!=null?`· ${l.wins}/${l.games} wins`:''} ${l.location?'· '+esc(l.location):''}</div></div>
+  <a class="btn" href="${l.listUrl}" target="_blank" rel="noopener">View list ↗</a></div>`}
+const sel=new Set();
+function ts(l){if(l.placing!==undefined)return new Date(l.date).getTime();
+  const d=new Date(l.date+' '+new Date().getFullYear());return d>Date.now()+864e5?d.setFullYear(d.getFullYear()-1):+d}
+function score(l){if(l.placing!==undefined)return -(l.placing/l.players);const[w,d,lo]=(l.record||'0-0-0').split('-').map(Number);return (w+(d||0)/2)/((w+(d||0)+(lo||0))||1)}
+function sorted(rows){const s=$('sort').value,k={new:l=>-ts(l),old:l=>ts(l),most:l=>-l.players,least:l=>l.players,best:l=>-score(l)}[s];
+  return rows.map((l,i)=>[l,i]).sort((x,y)=>k(x[0])-k(y[0])||x[1]-y[1]).map(x=>x[0])}
+function chips(){const c={};lists.forEach(l=>(l.detachments||[]).forEach(d=>c[d]=(c[d]||0)+1));
+  $('chips').innerHTML=mode==='lh'?Object.entries(c).sort((a,b)=>b[1]-a[1]).map(([d,n])=>`<button class="chip ${sel.has(d)?'on':''}" data-d="${esc(d)}">${esc(d)} <small>${n}</small></button>`).join(''):''}
+$('chips').onclick=e=>{const b=e.target.closest('.chip');if(!b)return;const d=b.dataset.d;sel.has(d)?sel.delete(d):sel.add(d);chips();render()};
+function render(){
+  const q=$('q').value.toLowerCase(),top=+$('top').value;
+  let rows,html;
+  if(mode==='lh'){rows=lists.filter(l=>[...sel].every(d=>l.detachments.includes(d))&&(!q||(l.event+l.player+l.detachments.join()+l.disposition).toLowerCase().includes(q)));
+    html=sorted(rows).map(cardLH).join('');
+    $('sub').textContent=`${rows.length} undefeated / 1-loss T'au lists from 16+ player events · source: Listhammer`+(sel.size?' · lists must include every selected detachment':'')}
+  else{rows=lists.filter(l=>(!top||(l.placing&&l.placing<=top))&&(!q||(l.event+l.player+l.detachment+l.location).toLowerCase().includes(q)));html=sorted(rows).map(cardBCP).join('');
+    $('sub').textContent=`${rows.length} T'au lists shown · source: Best Coast Pairings (list text needs a BCP login)`}
+  $('out').innerHTML=html||'<p class="sub">No matches.</p>';
+}
+async function load(){
+  if(location.protocol==='file:'){$('sub').innerHTML='This page must be opened through the server, not as a file. Run <b>node server.js</b> in this folder, then go to <a href="http://localhost:3000">http://localhost:3000</a>.';return}
+  $('sub').textContent='Loading…';$('out').innerHTML='';
+  $('days').style.display=$('top').style.display=mode==='bcp'?'':'none';
+  try{const r=await fetch(mode==='lh'?'/api/listhammer':'/api/tau?days='+$('days').value);const d=await r.json();if(d.error)throw Error(d.error);lists=d.lists;sel.clear();chips();render()}
+  catch(e){$('sub').textContent='Error: '+e.message}}
+$('out').onclick=e=>{const b=e.target.closest('button[data-i]');if(!b)return;const l=lists[+b.dataset.i];
+  $('mt').textContent=`${l.player} — ${l.detachments.join(' + ')} (${l.record})`;$('mp').textContent=l.listText;$('modal').classList.add('on')};
+$('mx').onclick=()=>$('modal').classList.remove('on');$('modal').onclick=e=>{if(e.target.id==='modal')$('modal').classList.remove('on')};
+document.onkeydown=e=>{if(e.key==='Escape')$('modal').classList.remove('on')};
+function setMode(m){mode=m;$('tLH').classList.toggle('on',m==='lh');$('tBCP').classList.toggle('on',m==='bcp');load()}
+$('tLH').onclick=()=>setMode('lh');$('tBCP').onclick=()=>setMode('bcp');
+$('days').onchange=load;$('top').onchange=$('sort').onchange=$('q').oninput=render;load();
+</script></body></html>
